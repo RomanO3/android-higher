@@ -1,0 +1,13 @@
+<resources>
+
+    <string name="app_name">Higher</string>
+    <string name="menu_settings">Settings</string>
+    <string name="title_activity_main">Higher</string>
+    <string name="start_measuring">Start Measuring!</string>
+    <string name="device_not_supported">Sorry, your device is not supported.</string>
+    <string name="click_start_to_begin">Click \"Start Measuring\" to begin.</string>
+    <string name="put_down_until_beep">Okie, now put the device down your feet until you hear a BEEP.</string>
+    <string name="bring_up_until_beep">Great, to finish the measurement just bring it up as high as you can. Stop when you here another BEEP.</string>
+    <string name="result_x_click_start_again">The result is in: %1$dcm. Click \"Start Measuring\" to do it again.</string>
+
+</resources>
