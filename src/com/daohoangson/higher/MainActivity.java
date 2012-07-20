@@ -1,6 +1,11 @@
 package com.daohoangson.higher;
 
+import java.io.IOException;
+import java.util.List;
+
 import android.app.Activity;
+import android.hardware.Camera;
+import android.hardware.Camera.Parameters;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -10,6 +15,9 @@ import android.media.ToneGenerator;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
+import android.view.SurfaceHolder;
+import android.view.SurfaceHolder.Callback;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.WindowManager;
@@ -17,18 +25,23 @@ import android.webkit.WebView;
 import android.widget.Button;
 
 public class MainActivity extends Activity implements OnClickListener,
-		SensorEventListener {
+		SensorEventListener, Callback {
 	final public static String TAG = "Higher/.MainActivity";
 	final public static float EPSILON = 0.03f;
 	final public static int REQUIRED_COUNTER = 3;
 	final public static int MINIBAR_TO_CENTIMETRE = 900;
-	final public static ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100);
+	final public static ToneGenerator tg = new ToneGenerator(
+			AudioManager.STREAM_NOTIFICATION, 100);
 
 	protected Button mBtnStart = null;
 	protected WebView mWebviewDesc = null;
 
 	protected SensorManager mSensorManager = null;
 	protected Sensor mPressureSensor = null;
+
+	protected SurfaceView mSurfaceView = null;
+	protected SurfaceHolder mSurfaceHolder = null;
+	protected Camera mCamera = null;
 
 	protected Handler mHandler = new Handler();
 
@@ -80,15 +93,33 @@ public class MainActivity extends Activity implements OnClickListener,
 		Log.i(TAG, "Waiting for second presure reading...");
 
 		setDescription(R.string.bring_up_until_beep);
+
+		// flash the flashlight (!)
+		setFlashlight(true);
+		mHandler.postDelayed(new Runnable() {
+			@Override
+			public void run() {
+				setFlashlight(false);
+			}
+		}, 500);
 		
 		// play the tone
 		tg.startTone(ToneGenerator.TONE_PROP_BEEP);
 	}
 
 	protected void doTrackingFinish() {
+		// flash the flashlight (!)
+		setFlashlight(true);
+		mHandler.postDelayed(new Runnable() {
+			@Override
+			public void run() {
+				setFlashlight(false);
+			}
+		}, 500);
+		
 		// play the tone
 		tg.startTone(ToneGenerator.TONE_PROP_BEEP);
-		
+
 		// unregister the listener asap
 		mSensorManager.unregisterListener(this);
 		Log.d(TAG, "Unregistered listener upon finished tracking");
@@ -104,6 +135,61 @@ public class MainActivity extends Activity implements OnClickListener,
 		Log.d(TAG, String.format("Second pressure reading is %1$f", mPressure2));
 	}
 
+	protected void setFlashlight(boolean enabled) {
+		if (mCamera == null) {
+			// nothing to do
+			Log.e(TAG, "setFlashlight(): No camera");
+			return;
+		}
+
+		Parameters parameters = mCamera.getParameters();
+		if (parameters == null) {
+			// nothing to do, either
+			Log.e(TAG, "setFlashlight(): Unable to get camera parameters");
+			return;
+		}
+
+		List<String> flashModes = parameters.getSupportedFlashModes();
+		if (flashModes == null) {
+			// bad luck
+			Log.e(TAG, "setFlashlight(): Unable to get camera parameters");
+			return;
+		}
+
+		if (flashModes.contains(Parameters.FLASH_MODE_TORCH)) {
+			String flashMode = parameters.getFlashMode();
+
+			if (enabled) {
+				if (!Parameters.FLASH_MODE_TORCH.equals(flashMode)) {
+					// turning it on now, yay!
+					mCamera.startPreview();
+					parameters.setFlashMode(Parameters.FLASH_MODE_TORCH);
+					mCamera.setParameters(parameters);
+					Log.d(TAG, "setFlashlight(): Turned on");
+				}
+			} else {
+				if (!Parameters.FLASH_MODE_OFF.equals(flashMode)) {
+					try {
+						parameters.setFlashMode(Parameters.FLASH_MODE_OFF);
+						mCamera.setParameters(parameters);
+						Log.d(TAG, "setFlashlight(): Turned off");
+					} catch (RuntimeException re) {
+						// this may happen because we didn't check for
+						// FLASH_MODE_OFF
+						// but it should work...
+						Log.e(TAG,
+								"setFlashlight(): Unable to set FLASH_MODE_OFF",
+								re);
+					}
+					
+					mCamera.stopPreview();
+				}
+			}
+		} else {
+			Log.e(TAG, "setFlashlight(): TORCH mode is not supported");
+		}
+	}
+
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -116,12 +202,28 @@ public class MainActivity extends Activity implements OnClickListener,
 
 		mWebviewDesc = (WebView) findViewById(R.id.webview_desc);
 
+		// surface and camera code is referenced from
+		// http://code.google.com/p/torch/source/browse/trunk/src/com/colinmcdonough/android/torch/Torch.java
+		mSurfaceView = (SurfaceView) findViewById(R.id.surface_view);
+		mSurfaceHolder = mSurfaceView.getHolder();
+		mSurfaceHolder.addCallback(this);
+
 		mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
 		mPressureSensor = mSensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
 	}
 
 	protected void onResume() {
 		super.onResume();
+
+		// open the camera for the flashlight
+		try {
+			mCamera = Camera.open();
+			Log.v(TAG, "Opened camera successfully");
+		} catch (RuntimeException re) {
+			// this is expected because many devices
+			// don't have a back facing camera...
+			Log.d(TAG, "Failed to open camera", re);
+		}
 
 		if (mPressureSensor == null) {
 			mBtnStart.setEnabled(false);
@@ -135,6 +237,12 @@ public class MainActivity extends Activity implements OnClickListener,
 
 	protected void onPause() {
 		super.onPause();
+
+		// release the camera if exists
+		if (mCamera != null) {
+			mCamera.release();
+			Log.v(TAG, "Released camera");
+		}
 
 		mSensorManager.unregisterListener(this);
 		Log.d(TAG, "Unregistered listener upon Acitivity pause");
@@ -175,11 +283,13 @@ public class MainActivity extends Activity implements OnClickListener,
 			} else {
 				float delta = Math.abs(v - mPressure1);
 				mPressure1 = (v + mPressure1) / 2;
-				
+
 				if (delta < EPSILON) {
 					if (mCounter < REQUIRED_COUNTER) {
 						mCounter++;
-						Log.v(TAG, String.format("mPresure1 = %2$f, counter = %1$d", mCounter, mPressure1));
+						Log.v(TAG, String.format(
+								"mPresure1 = %2$f, counter = %1$d", mCounter,
+								mPressure1));
 					} else {
 						// accept the value as it's good
 						mHandler.postAtFrontOfQueue(new Runnable() {
@@ -191,7 +301,8 @@ public class MainActivity extends Activity implements OnClickListener,
 					}
 				} else {
 					mCounter = 0;
-					Log.v(TAG, String.format("mPresure1 = %1$f, reset counter", mPressure1));
+					Log.v(TAG, String.format("mPresure1 = %1$f, reset counter",
+							mPressure1));
 				}
 			}
 			break;
@@ -211,11 +322,13 @@ public class MainActivity extends Activity implements OnClickListener,
 			} else {
 				float delta = Math.abs(v - mPressure2);
 				mPressure2 = (v + mPressure2) / 2;
-				
+
 				if (delta < EPSILON) {
 					if (mCounter < REQUIRED_COUNTER) {
 						mCounter++;
-						Log.v(TAG, String.format("mPresure2 = %2$f, counter = %1$d", mCounter, mPressure2));
+						Log.v(TAG, String.format(
+								"mPresure2 = %2$f, counter = %1$d", mCounter,
+								mPressure2));
 					} else {
 						// it's good now, accept it
 						mHandler.postAtFrontOfQueue(new Runnable() {
@@ -227,12 +340,34 @@ public class MainActivity extends Activity implements OnClickListener,
 					}
 				} else {
 					mCounter = 0;
-					Log.v(TAG, String.format("mPresure2 = %1$f, reset counter", mPressure2));
+					Log.v(TAG, String.format("mPresure2 = %1$f, reset counter",
+							mPressure2));
 				}
 			}
 			break;
 		default:
 			Log.e(TAG, "Got sensor changed not during a tracking?!");
 		}
+	}
+
+	@Override
+	public void surfaceChanged(SurfaceHolder holder, int format, int width,
+			int height) {
+		Log.d(TAG, "surfaceChanged");
+	}
+
+	@Override
+	public void surfaceCreated(SurfaceHolder holder) {
+		try {
+			mCamera.setPreviewDisplay(holder);
+			Log.d(TAG, "Done setting preview display for camera");
+		} catch (IOException ioe) {
+			Log.e(TAG, "Unable to set preview display for camera", ioe);
+		}
+	}
+
+	@Override
+	public void surfaceDestroyed(SurfaceHolder holder) {
+		Log.d(TAG, "surfaceDestroyed");
 	}
 }

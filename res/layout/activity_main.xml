@@ -3,6 +3,11 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent" >
 
+    <SurfaceView
+        android:id="@+id/surface_view"
+        android:layout_width="1dp"
+        android:layout_height="1dp" />
+
     <Button
         android:id="@+id/btn_start"
         android:layout_width="match_parent"
@@ -20,14 +25,13 @@
         android:layout_height="wrap_content"
         android:layout_alignLeft="@+id/btn_start"
         android:layout_below="@+id/btn_start"
-        android:layout_marginTop="20dp"
-        android:layout_marginRight="20dp" >
+        android:layout_marginRight="20dp"
+        android:layout_marginTop="20dp" >
 
         <WebView
             android:id="@+id/webview_desc"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
-
     </ScrollView>
 
 </RelativeLayout>
